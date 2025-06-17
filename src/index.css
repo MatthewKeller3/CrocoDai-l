@@ -1,0 +1,94 @@
+/* Alert positioning */
+.alert {
+  max-width: 300px;
+  position: absolute;
+  bottom: 100px;
+  right: 100px;
+  padding: 50px;
+}
+
+/* Professional styling for AlgoGator */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  margin: 0;
+  padding: 0;
+}
+
+/* Custom tab hover effects */
+.modern-tab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+  background: linear-gradient(45deg, #f8f9fa, #e9ecef) !important;
+  color: #495057 !important;
+}
+
+.modern-tab.active {
+  background: linear-gradient(45deg, #667eea, #764ba2) !important;
+  color: white !important;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3) !important;
+}
+
+.featured-tab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4) !important;
+  filter: brightness(1.1);
+}
+
+/* Card hover effects */
+.card {
+  transition: all 0.3s ease !important;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+}
+
+/* Gradient text utility */
+.gradient-text {
+  background: linear-gradient(45deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Professional form styling */
+.form-control, .form-select {
+  border-radius: 10px !important;
+  border: 2px solid #e9ecef !important;
+  transition: all 0.3s ease !important;
+}
+
+.form-control:focus, .form-select:focus {
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25) !important;
+}
+
+/* Button styling */
+.btn {
+  border-radius: 10px !important;
+  font-weight: 600 !important;
+  transition: all 0.3s ease !important;
+}
+
+.btn-primary {
+  background: linear-gradient(45deg, #667eea, #764ba2) !important;
+  border: none !important;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3) !important;
+  filter: brightness(1.1);
+}
+
+/* Loading spinner customization */
+.spinner-border {
+  color: #667eea !important;
+}
+
+/* Badge styling */
+.badge {
+  border-radius: 20px !important;
+  font-weight: 500 !important;
+}
