@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
 import { useDispatch } from 'react-redux'
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import { Container, Row, Col, Card } from 'react-bootstrap'
@@ -24,27 +24,44 @@ function App() {
 
   const dispatch = useDispatch()
 
-  const loadBlockchainData = async () => {
+  const loadBlockchainData = useCallback(async () => {
     // Initiate provider
-    const provider = await loadProvider(dispatch)
+    const provider = await loadProvider(dispatch);
 
-    // Fetch current network's chainId (e.g. hardhat: 31337, kovan: 42)
-    const chainId = await loadNetwork(provider, dispatch)
+    if (!provider) {
+      console.error('Failed to load provider');
+      return;
+    }
 
-    // Reload page when network changes
-    window.ethereum.on('chainChanged', () => {
-      window.location.reload()
-    })
+    try {
+      // Fetch current network's chainId (e.g. hardhat: 31337, kovan: 42)
+      const chainId = await loadNetwork(provider, dispatch);
 
-    // Fetch current account from Metamask when changed
-    window.ethereum.on('accountsChanged', async () => {
-      await loadAccount(dispatch)
-    })
+      // Reload page when network changes
+      const handleChainChanged = () => {
+        window.location.reload();
+      };
 
-    // Initiate contracts
-    await loadTokens(provider, chainId, dispatch)
-    await loadAMM(provider, chainId, dispatch)
-  }
+      const handleAccountsChanged = async () => {
+        await loadAccount(dispatch);
+      };
+
+      window.ethereum.on('chainChanged', handleChainChanged);
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+
+      // Initiate contracts
+      await loadTokens(provider, chainId, dispatch);
+      await loadAMM(provider, chainId, dispatch);
+
+      // Cleanup event listeners
+      return () => {
+        window.ethereum.removeListener('chainChanged', handleChainChanged);
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+      };
+    } catch (error) {
+      console.error('Error loading blockchain data:', error);
+    }
+  }, [dispatch]);
 
   useEffect(() => {
     loadBlockchainData()

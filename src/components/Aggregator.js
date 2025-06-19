@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
 import { Card, Form, InputGroup, Button, Row, Col, Spinner, Alert } from 'react-bootstrap'
 import { ethers } from 'ethers'
@@ -43,58 +43,58 @@ const Aggregator = () => {
     }
   }, [provider, amm, amm1Contract, amm2Contract, aggregatorContract])
 
-  const inputHandler = async (e) => {
-    if (!inputToken || !outputToken) return
+  const inputHandler = useCallback(async (e) => {
+    if (!inputToken || !outputToken) return;
 
-    const inputAmount = e.target.value
-    setInputAmount(inputAmount)
+    const value = e.target.value;
+    setInputAmount(value);
 
-    if (inputAmount === '' || inputAmount === '0') {
-      setOutputAmount(0)
-      setPrice(0)
-      setBestDex(null)
-      setRates({ amm1: 0, amm2: 0 })
-      return
+    if (value === '' || value === '0') {
+      setOutputAmount('0');
+      setPrice(0);
+      setBestDex(null);
+      setRates({ amm1: 0, amm2: 0 });
+      return;
     }
 
     try {
       // Get rates from both AMMs
-      const amount = ethers.utils.parseEther(inputAmount.toString())
+      const amount = ethers.utils.parseEther(value.toString());
       
-      let amm1Rate = 0
-      let amm2Rate = 0
+      let amm1Rate = 0;
+      let amm2Rate = 0;
       
-      if (amm1Contract && amm2Contract) {
+      if (amm1Contract && amm2Contract && tokens && tokens[0] && tokens[1]) {
         if (inputToken === tokens[0] && outputToken === tokens[1]) {
           // KelChain -> USD
-          amm1Rate = await amm1Contract.calculateToken1Swap(amount)
-          amm2Rate = await amm2Contract.calculateToken1Swap(amount)
+          amm1Rate = await amm1Contract.calculateToken1Swap(amount);
+          amm2Rate = await amm2Contract.calculateToken1Swap(amount);
         } else if (inputToken === tokens[1] && outputToken === tokens[0]) {
           // USD -> KelChain
-          amm1Rate = await amm1Contract.calculateToken2Swap(amount)
-          amm2Rate = await amm2Contract.calculateToken2Swap(amount)
+          amm1Rate = await amm1Contract.calculateToken2Swap(amount);
+          amm2Rate = await amm2Contract.calculateToken2Swap(amount);
         }
 
-        const amm1Output = parseFloat(ethers.utils.formatEther(amm1Rate))
-        const amm2Output = parseFloat(ethers.utils.formatEther(amm2Rate))
+        const amm1Output = parseFloat(ethers.utils.formatEther(amm1Rate));
+        const amm2Output = parseFloat(ethers.utils.formatEther(amm2Rate));
 
-        setRates({ amm1: amm1Output, amm2: amm2Output })
+        setRates({ amm1: amm1Output, amm2: amm2Output });
 
         // Determine best DEX
         if (amm1Output > amm2Output) {
-          setBestDex('AMM1')
-          setOutputAmount(amm1Output)
-          setPrice(amm1Output / parseFloat(inputAmount))
+          setBestDex('AMM1');
+          setOutputAmount(amm1Output);
+          setPrice(amm1Output / parseFloat(value));
         } else {
-          setBestDex('AMM2')
-          setOutputAmount(amm2Output)
-          setPrice(amm2Output / parseFloat(inputAmount))
+          setBestDex('AMM2');
+          setOutputAmount(amm2Output);
+          setPrice(amm2Output / parseFloat(value));
         }
       }
     } catch (error) {
-      console.error('Error calculating rates:', error)
+      console.error('Error calculating rates:', error);
     }
-  }
+  }, [inputToken, outputToken, amm1Contract, amm2Contract, tokens]);
 
   const swapHandler = async (e) => {
     e.preventDefault()
@@ -148,11 +148,15 @@ const Aggregator = () => {
     setIsSwapping(false)
   }
 
+  // Update output when input changes
   useEffect(() => {
-    if(inputToken && outputToken && inputAmount > 0) {
-      inputHandler({ target: { value: inputAmount } })
-    }
-  }, [inputToken, outputToken])
+    const updateOutput = async () => {
+      if (inputToken && outputToken && inputAmount > 0) {
+        await inputHandler({ target: { value: inputAmount } });
+      }
+    };
+    updateOutput();
+  }, [inputToken, outputToken, inputAmount, inputHandler]);
 
   return (
     <div>

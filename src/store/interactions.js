@@ -89,18 +89,46 @@ export const loadAMM = async (provider, chainId, dispatch) => {
     const amm1Address = getChecksumAddress(config[chainId].amms.amm1.address)
     const amm2Address = config[chainId].amms.amm2.address ? 
       getChecksumAddress(config[chainId].amms.amm2.address) : null
-    const aggregatorAddress = config[chainId].aggregator.address ? 
-      getChecksumAddress(config[chainId].aggregator.address) : null
 
-    const amm1 = new ethers.Contract(amm1Address, AMM_ABI, provider)
-    const amm2 = amm2Address ? new ethers.Contract(amm2Address, AMM_ABI, provider) : null
-    const aggregator = aggregatorAddress ? new ethers.Contract(aggregatorAddress, AGGREGATOR_ABI, provider) : null
+    console.log('Loading AMM contracts with addresses:', { amm1Address, amm2Address })
 
-    dispatch(setContract({ amm1, amm2, aggregator }))
+    // Create contract instances with signer for write operations
+    const signer = provider.getSigner()
+    const amm1 = new ethers.Contract(amm1Address, AMM_ABI, signer)
+    const amm2 = amm2Address ? new ethers.Contract(amm2Address, AMM_ABI, signer) : null
 
-    return { amm1, amm2, aggregator }
+    // Also load aggregator if exists
+    let aggregator = null
+    if (config[chainId].aggregator?.address) {
+      const aggregatorAddress = getChecksumAddress(config[chainId].aggregator.address)
+      aggregator = new ethers.Contract(aggregatorAddress, AGGREGATOR_ABI, signer)
+    }
+
+    console.log('AMM Contracts Loaded:', { 
+      amm1: { address: amm1Address, contract: !!amm1 },
+      amm2: { address: amm2Address, contract: !!amm2 },
+      aggregator: { address: aggregator?.address, contract: !!aggregator }
+    })
+
+    // Create the contract objects with both address and contract instance
+    const amm1Obj = { address: amm1Address, contract: amm1 }
+    const amm2Obj = amm2Address ? { address: amm2Address, contract: amm2 } : null
+    const aggregatorObj = aggregator ? { address: aggregator.address, contract: aggregator } : null
+
+    // Dispatch the contract instances
+    dispatch(setContract({ 
+      amm1: amm1Obj,
+      amm2: amm2Obj,
+      aggregator: aggregatorObj
+    }))
+
+    return { 
+      amm1: amm1Obj,
+      amm2: amm2Obj,
+      aggregator: aggregatorObj
+    }
   } catch (error) {
-    console.error('Error loading AMM:', error)
+    console.error('Error loading AMM contracts:', error)
     throw error
   }
 }
@@ -109,42 +137,97 @@ export const loadAMM = async (provider, chainId, dispatch) => {
 // ------------------------------------------------------------------------------
 // LOAD BALANCES & SHARES
 export const loadBalances = async (amm, tokens, account, dispatch) => {
-  if (!amm || !amm.amm1 || !amm.amm1.contract || !tokens || !tokens[0] || !tokens[1] || !account) {
-    console.warn('loadBalances: Missing required parameters', { 
-      amm: !!amm,
-      amm1: !!(amm?.amm1),
-      amm1Contract: !!(amm?.amm1?.contract),
-      token1: !!tokens?.[0], 
-      token2: !!tokens?.[1],
-      account: !!account 
-    });
+  // Early return with debug info if we're missing required parameters
+  const missingParams = [];
+  if (!amm) missingParams.push('amm');
+  if (!tokens || !Array.isArray(tokens)) missingParams.push('tokens array');
+  if (!tokens?.[0]) missingParams.push('token1');
+  if (!tokens?.[1]) missingParams.push('token2');
+  if (!account) missingParams.push('account');
+  
+  if (missingParams.length > 0) {
+    console.warn(`loadBalances: Missing required parameters: ${missingParams.join(', ')}`);
+    // Still dispatch with zeros to prevent UI from showing stale data
+    dispatch(balancesLoaded(['0', '0']));
+    dispatch(sharesLoaded('0'));
     return;
   }
 
   try {
+    console.log('Loading token balances for account:', account);
+    console.log('Token 1 address:', tokens[0].address);
+    console.log('Token 2 address:', tokens[1].address);
+    
+    // Format balance helper function
+    const formatBalance = (balance) => {
+      try {
+        if (!balance) return '0.0000';
+        const formatted = parseFloat(ethers.utils.formatUnits(balance, 18));
+        return isNaN(formatted) ? '0.0000' : formatted.toFixed(4);
+      } catch (error) {
+        console.error('Error formatting balance:', error);
+        return '0.0000';
+      }
+    };
+    
     // Load token balances
-    const balance1 = await tokens[0].balanceOf(account);
-    const balance2 = await tokens[1].balanceOf(account);
-
-    // Convert BigNumber to string before formatting
-    dispatch(balancesLoaded([
-      ethers.utils.formatUnits(balance1.toString(), 'ether'),
-      ethers.utils.formatUnits(balance2.toString(), 'ether')
-    ]));
-
-    // Try to get shares from the contract
+    let balance1, balance2;
+    
     try {
-      const shares = await amm.amm1.contract.shares(account);
-      // Ensure shares is a string before formatting
-      const sharesStr = typeof shares === 'number' ? shares.toString() : shares;
-      dispatch(sharesLoaded(ethers.utils.formatUnits(sharesStr, 'ether')));
+      balance1 = await tokens[0].balanceOf(account);
+      console.log('Token 1 balance raw:', balance1.toString());
     } catch (error) {
-      console.log('Could not load shares:', error);
+      console.error('Error loading token 1 balance:', error);
+      balance1 = ethers.BigNumber.from(0);
+    }
+    
+    try {
+      balance2 = await tokens[1].balanceOf(account);
+      console.log('Token 2 balance raw:', balance2.toString());
+    } catch (error) {
+      console.error('Error loading token 2 balance:', error);
+      balance2 = ethers.BigNumber.from(0);
+    }
+    
+    // Format and dispatch balances
+    const formattedBalances = [
+      formatBalance(balance1),
+      formatBalance(balance2)
+    ];
+    
+    console.log('Formatted balances:', formattedBalances);
+    dispatch(balancesLoaded(formattedBalances));
+
+    // Try to get shares from the contract if AMM is available
+    if (amm?.contract) {
+      try {
+        console.log('Loading shares for account:', account, 'from AMM:', amm.address);
+        // First try the shares function
+        const shares = await amm.contract.shares(account);
+        const sharesStr = shares?.toString() || '0';
+        console.log('LP Shares:', sharesStr);
+        dispatch(sharesLoaded(parseFloat(ethers.utils.formatUnits(sharesStr, 'ether')).toFixed(4)));
+      } catch (error) {
+        console.error('Could not load shares using shares():', error);
+        // If shares() fails, try balanceOf as a fallback
+        try {
+          const shares = await amm.contract.balanceOf(account);
+          const sharesStr = shares?.toString() || '0';
+          console.log('LP Shares (using balanceOf()):', sharesStr);
+          dispatch(sharesLoaded(parseFloat(ethers.utils.formatUnits(sharesStr, 'ether')).toFixed(4)));
+        } catch (err) {
+          console.error('Could not load shares using balanceOf() either:', err);
+          dispatch(sharesLoaded('0'));
+        }
+      }
+    } else {
+      console.warn('AMM contract not available for loading shares', { amm });
       dispatch(sharesLoaded('0'));
     }
     
   } catch (error) {
     console.error('Error in loadBalances:', error);
+    dispatch(balancesLoaded(['0', '0']));
     dispatch(sharesLoaded('0'));
   }
 }
@@ -176,19 +259,48 @@ export const addLiquidity = async (provider, amm, tokens, amounts, dispatch) => 
 }
 
 // ------------------------------------------------------------------------------
-// REMOVE LIQUDITY
+// REMOVE LIQUIDITY
 export const removeLiquidity = async (provider, amm, shares, dispatch) => {
   try {
+    if (!provider || !amm?.amm1?.contract || !shares) {
+      console.error('Missing required parameters for removeLiquidity:', { 
+        hasProvider: !!provider,
+        hasAmm: !!amm,
+        hasAmm1: !!amm?.amm1,
+        hasAmm1Contract: !!amm?.amm1?.contract,
+        hasShares: !!shares
+      });
+      dispatch(withdrawFail())
+      return;
+    }
+
     dispatch(withdrawRequest())
+    console.log('Initiating withdrawal of', shares.toString(), 'shares')
 
     const signer = await provider.getSigner()
+    const ammContract = amm.amm1.contract.connect(signer)
 
-    let transaction = await amm.amm1.connect(signer).removeLiquidity(shares)
-    await transaction.wait()
+    // First, check the expected return amounts
+    const [token1Amount, token2Amount] = await ammContract.calculateWithdrawAmount(shares)
+    console.log('Expected to receive:', {
+      token1: ethers.utils.formatUnits(token1Amount, 'ether'),
+      token2: ethers.utils.formatUnits(token2Amount, 'ether')
+    })
 
+    // Execute the withdrawal
+    console.log('Sending removeLiquidity transaction...')
+    const transaction = await ammContract.removeLiquidity(shares)
+    console.log('Transaction sent:', transaction.hash)
+    
+    const receipt = await transaction.wait()
+    console.log('Transaction confirmed in block:', receipt.blockNumber)
+    
     dispatch(withdrawSuccess(transaction.hash))
+    return receipt
   } catch (error) {
+    console.error('Error in removeLiquidity:', error)
     dispatch(withdrawFail())
+    throw error
   }
 }
 
@@ -281,8 +393,7 @@ export const swap = async (provider, amm, token, symbol, amount, dispatch) => {
     
     console.log('✅ Approval process completed successfully')
     console.log('=== TOKEN APPROVAL PROCESS END ===')
-    return true
-
+    
     // Execute the swap with the updated allowance
     console.log('Executing swap with sufficient allowance...')
     try {
@@ -385,14 +496,46 @@ export const swap = async (provider, amm, token, symbol, amount, dispatch) => {
 // LOAD ALL SWAPS
 
 export const loadAllSwaps = async (provider, amm, dispatch) => {
-  const block = await provider.getBlockNumber()
+  try {
+    const block = await provider.getBlockNumber()
+    console.log('Loading swaps up to block:', block)
 
-  const swapStream = await amm.amm1.queryFilter('Swap', 0, block)
-  const swaps = swapStream.map(event => {
-    return { hash: event.transactionHash, args: event.args }
-  })
+    // Fetch swaps from both AMMs in parallel
+    const [amm1Swaps, amm2Swaps] = await Promise.all([
+      amm.amm1?.contract?.queryFilter('Swap', 0, block).catch(e => {
+        console.error('Error fetching swaps from AMM1:', e)
+        return []
+      }) || [],
+      
+      amm.amm2?.contract?.queryFilter('Swap', 0, block).catch(e => {
+        console.error('Error fetching swaps from AMM2:', e)
+        return []
+      }) || []
+    ])
 
-  dispatch(swapsLoaded(swaps))
+    console.log('Fetched swaps:', {
+      amm1Count: amm1Swaps.length,
+      amm2Count: amm2Swaps.length
+    })
+
+    // Combine and sort all swaps by block number
+    const allSwaps = [...amm1Swaps, ...amm2Swaps]
+      .sort((a, b) => a.blockNumber - b.blockNumber)
+      .map(event => ({
+        ...event,
+        ammAddress: event.address,
+        hash: event.transactionHash,
+        args: event.args || {}
+      }))
+
+    console.log('Dispatching', allSwaps.length, 'swaps to store')
+    dispatch(swapsLoaded(allSwaps))
+    return allSwaps
+  } catch (error) {
+    console.error('Error in loadAllSwaps:', error)
+    dispatch(swapsLoaded([]))
+    return []
+  }
 }
 
 // ------------------------------------------------------------------------------

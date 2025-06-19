@@ -65,26 +65,49 @@ const Deposit = () => {
     e.preventDefault()
 
     if (!amm) {
-      console.warn('AMM contract not loaded yet')
+      window.alert('AMM contract not loaded. Please try refreshing the page.')
+      return
+    }
+
+    if (!token1Amount || !token2Amount || 
+        parseFloat(token1Amount) <= 0 || 
+        parseFloat(token2Amount) <= 0) {
+      window.alert('Please enter valid amounts for both tokens')
       return
     }
 
     setShowAlert(false)
 
-    const _token1Amount = ethers.utils.parseUnits(token1Amount, 'ether')
-    const _token2Amount = ethers.utils.parseUnits(token2Amount, 'ether')
+    try {
+      const _token1Amount = ethers.utils.parseUnits(token1Amount, 'ether')
+      const _token2Amount = ethers.utils.parseUnits(token2Amount, 'ether')
 
-    await addLiquidity(
-      provider,
-      ammState,
-      tokens,
-      [_token1Amount, _token2Amount],
-      dispatch
-    )
+      console.log('Adding liquidity with amounts:', {
+        token1: token1Amount,
+        token2: token2Amount
+      })
 
-    await loadBalances(ammState, tokens, account, dispatch)
+      const tx = await addLiquidity(
+        provider,
+        ammState,
+        tokens,
+        [_token1Amount, _token2Amount],
+        dispatch
+      )
 
-    setShowAlert(true)
+      if (tx) {
+        console.log('Liquidity added successfully, updating balances...')
+        await loadBalances(ammState, tokens, account, dispatch)
+        setShowAlert(true)
+        
+        // Reset form after successful deposit
+        setToken1Amount('0')
+        setToken2Amount('0')
+      }
+    } catch (error) {
+      console.error('Deposit error:', error)
+      window.alert(`Deposit failed: ${error.message || 'Unknown error occurred'}`)
+    }
   }
 
   return (

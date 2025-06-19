@@ -26,19 +26,43 @@ export const amm = createSlice({
   },
   reducers: {
     setContract: (state, action) => {
+      // Handle new format with { address, contract }
       if (action.payload.amm1) {
-        state.amm1.contract = action.payload.amm1
+        state.amm1 = {
+          ...state.amm1,
+          ...action.payload.amm1,
+          address: action.payload.amm1.address || state.amm1.address,
+          contract: action.payload.amm1.contract || action.payload.amm1.contract
+        }
       }
+      
       if (action.payload.amm2) {
-        state.amm2.contract = action.payload.amm2
+        state.amm2 = {
+          ...state.amm2,
+          ...action.payload.amm2,
+          address: action.payload.amm2.address || state.amm2.address,
+          contract: action.payload.amm2.contract || action.payload.amm2.contract
+        }
+      } else {
+        state.amm2 = { contract: null, address: null }
       }
+      
       if (action.payload.aggregator) {
-        state.aggregator.contract = action.payload.aggregator
+        state.aggregator = {
+          ...state.aggregator,
+          ...action.payload.aggregator,
+          address: action.payload.aggregator.address || state.aggregator.address,
+          contract: action.payload.aggregator.contract || action.payload.aggregator.contract
+        }
+      } else {
+        state.aggregator = { contract: null, address: null }
       }
-      // Backward compatibility
-      if (!action.payload.amm1 && !action.payload.amm2 && !action.payload.aggregator) {
-        state.amm1.contract = action.payload
-      }
+      
+      console.log('AMM State Updated:', {
+        amm1: { address: state.amm1?.address, hasContract: !!state.amm1?.contract },
+        amm2: { address: state.amm2?.address, hasContract: !!state.amm2?.contract },
+        aggregator: { address: state.aggregator?.address, hasContract: !!state.aggregator?.contract }
+      })
     },
     sharesLoaded: (state, action) => {
       state.shares = action.payload

@@ -2,7 +2,6 @@ import { useSelector, useDispatch } from 'react-redux'
 import Navbar from 'react-bootstrap/Navbar';
 import Form from 'react-bootstrap/Form'
 import Button from 'react-bootstrap/Button'
-import Blockies from 'react-blockies'
 
 import { loadAccount, loadBalances } from '../store/interactions'
 
