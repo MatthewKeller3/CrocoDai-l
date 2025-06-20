@@ -42,14 +42,39 @@ async function main() {
   await amm2.deployed()
   console.log(`   ✅ AMM2 (DEX 2): ${amm2.address}`)
 
-  // Step 4: Deploy DEX Aggregator
-  console.log('\n🎯 Step 4: Deploying DEX Aggregator...');
+  // Step 4: Deploy AMM3 (DEX 3) with new tokens
+  console.log('\n🔄 Step 4: Deploying AMM3 (DEX 3) with new tokens...');
+  
+  // Deploy new tokens specifically for AMM3
+  console.log('   Deploying KEL3 Token...')
+  const kel3 = await WorkingToken.deploy(totalSupply)
+  await kel3.deployed()
+  console.log(`   ✅ KEL3 Token deployed: ${kel3.address}`)
+  await kel3.initialize('KelChain3 Token', 'KEL3')
+  console.log(`   ✅ KEL3 Token initialized`)
+
+  console.log('   Deploying USD3 Token...')
+  const usd3 = await WorkingToken.deploy(totalSupply)
+  await usd3.deployed()
+  console.log(`   ✅ USD3 Token deployed: ${usd3.address}`)
+  await usd3.initialize('USD3 Stable', 'USD3')
+  console.log(`   ✅ USD3 Token initialized`)
+
+  // Deploy AMM3 with new tokens
+  const amm3 = await AMM.deploy(kel3.address, usd3.address)
+  await amm3.deployed()
+  console.log(`   ✅ AMM3 (DEX 3): ${amm3.address}`)
+
+  // Step 5: Deploy DEX Aggregator
+  console.log('\n🎯 Step 5: Deploying DEX Aggregator...');
   const DexAggregator = await hre.ethers.getContractFactory('DexAggregator')
+  // Deploy with all 3 AMMs and main token pair (AMM3 will use the same token addresses but with different balances)
   const aggregator = await DexAggregator.deploy(
-    amm1.address,
-    amm2.address,
-    dapp.address,
-    usd.address
+    amm1.address,  // AMM1 address
+    amm2.address,  // AMM2 address
+    amm3.address,  // AMM3 address
+    dapp.address,  // Main token1 (KEL)
+    usd.address   // Main token2 (USD)
   )
   await aggregator.deployed()
   console.log(`   ✅ DEX Aggregator: ${aggregator.address}`)
@@ -64,7 +89,8 @@ async function main() {
     },
     amms: {
       amm1: amm1.address,
-      amm2: amm2.address
+      amm2: amm2.address,
+      amm3: amm3.address
     },
     aggregator: aggregator.address
   };
@@ -78,8 +104,11 @@ async function main() {
   console.log('═══════════════════════════════════════');
   console.log(`💰 DAPP Token:     ${dapp.address}`);
   console.log(`💰 USD Token:      ${usd.address}`);
+  console.log(`🔷 KEL3 Token:     ${kel3.address}`);
+  console.log(`🔷 USD3 Token:     ${usd3.address}`);
   console.log(`🔄 AMM1 (DEX 1):   ${amm1.address}`);
   console.log(`🔄 AMM2 (DEX 2):   ${amm2.address}`);
+  console.log(`🔄 AMM3 (DEX 3):   ${amm3.address} (uses KEL3/USD3)`);
   console.log(`🎯 DEX Aggregator: ${aggregator.address}`);
   console.log('═══════════════════════════════════════');
   console.log('\n📝 Next Steps:');

@@ -17,7 +17,7 @@ const Tabs = () => {
         <Nav.Link>Charts</Nav.Link>
       </LinkContainer>
       <LinkContainer to="/aggregator">
-        <Nav.Link>🎯 DEX Aggregator</Nav.Link>
+        <Nav.Link>! DEX Aggregator</Nav.Link>
       </LinkContainer>
     </Nav>
   );

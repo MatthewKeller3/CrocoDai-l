@@ -27,10 +27,27 @@ import {
   swapFail
 } from './reducers/amm'
 
-import TOKEN_ABI from '../abis/Token.json';
-import AMM_ABI from '../abis/AMM.json';
-import AGGREGATOR_ABI from '../abis/DexAggregator.json';
-import config from '../config.json';
+import TOKEN_ABI_RAW from '../abis/Token.json'
+import AMM_ABI_RAW from '../abis/AMM.json'
+import AGGREGATOR_ABI_RAW from '../abis/DexAggregator.json'
+import config from '../config.json'
+
+// Process ABIs to handle both raw and truffle-style ABIs
+const getABI = (abi) => {
+  if (!abi) return []
+  if (Array.isArray(abi)) return abi
+  if (abi.abi) return abi.abi
+  return abi
+}
+
+const TOKEN_ABI = getABI(TOKEN_ABI_RAW)
+const AMM_ABI = getABI(AMM_ABI_RAW)
+const AGGREGATOR_ABI = getABI(AGGREGATOR_ABI_RAW)
+
+// Log ABIs for debugging
+console.log('Token ABI:', TOKEN_ABI.length, 'items')
+console.log('AMM ABI:', AMM_ABI.length, 'items')
+console.log('Aggregator ABI:', AGGREGATOR_ABI.length, 'items')
 
 // Helper function to ensure addresses are checksummed
 const getChecksumAddress = (address) => {
@@ -68,63 +85,158 @@ export const loadAccount = async (dispatch) => {
 // LOAD CONTRACTS
 export const loadTokens = async (provider, chainId, dispatch) => {
   try {
-    const kelchainAddress = getChecksumAddress(config[chainId].tokens.kelchain.address)
-    const usdAddress = getChecksumAddress(config[chainId].tokens.usd.address)
+    const tokens = config[chainId].tokens;
     
-    const kelchain = new ethers.Contract(kelchainAddress, TOKEN_ABI, provider)
-    const usd = new ethers.Contract(usdAddress, TOKEN_ABI, provider)
+    // Load main tokens (KEL and USD)
+    const kelchainAddress = getChecksumAddress(tokens.kelchain.address);
+    const usdAddress = getChecksumAddress(tokens.usd.address);
+    
+    const kelchain = new ethers.Contract(kelchainAddress, TOKEN_ABI, provider);
+    const usd = new ethers.Contract(usdAddress, TOKEN_ABI, provider);
 
-    dispatch(setContracts([kelchain, usd]))
-    dispatch(setSymbols([await kelchain.symbol(), await usd.symbol()]))
+    // Load AMM3 tokens if they exist
+    let kel3, usd3;
+    if (tokens.kelchain3 && tokens.usd3) {
+      const kel3Address = getChecksumAddress(tokens.kelchain3.address);
+      const usd3Address = getChecksumAddress(tokens.usd3.address);
+      
+      kel3 = new ethers.Contract(kel3Address, TOKEN_ABI, provider);
+      usd3 = new ethers.Contract(usd3Address, TOKEN_ABI, provider);
+    }
+
+    // Get all token symbols
+    const tokenSymbols = [
+      await kelchain.symbol(),
+      await usd.symbol(),
+      ...(kel3 && usd3 ? [await kel3.symbol(), await usd3.symbol()] : [])
+    ];
+
+    // Get all token contracts
+    const tokenContracts = [kelchain, usd];
+    if (kel3 && usd3) {
+      tokenContracts.push(kel3, usd3);
+    }
+
+    dispatch(setContracts(tokenContracts));
+    dispatch(setSymbols(tokenSymbols));
     
-    return { kelchain, usd }
+    return { 
+      kelchain, 
+      usd,
+      ...(kel3 && usd3 ? { kel3, usd3 } : {})
+    };
   } catch (error) {
-    console.error('Error loading tokens:', error)
-    throw error
+    console.error('Error loading tokens:', error);
+    throw error;
   }
 }
 
 export const loadAMM = async (provider, chainId, dispatch) => {
   try {
-    const amm1Address = getChecksumAddress(config[chainId].amms.amm1.address)
-    const amm2Address = config[chainId].amms.amm2.address ? 
-      getChecksumAddress(config[chainId].amms.amm2.address) : null
-
-    console.log('Loading AMM contracts with addresses:', { amm1Address, amm2Address })
-
-    // Create contract instances with signer for write operations
-    const signer = provider.getSigner()
-    const amm1 = new ethers.Contract(amm1Address, AMM_ABI, signer)
-    const amm2 = amm2Address ? new ethers.Contract(amm2Address, AMM_ABI, signer) : null
-
-    // Also load aggregator if exists
-    let aggregator = null
-    if (config[chainId].aggregator?.address) {
-      const aggregatorAddress = getChecksumAddress(config[chainId].aggregator.address)
-      aggregator = new ethers.Contract(aggregatorAddress, AGGREGATOR_ABI, signer)
+    const chainConfig = config[chainId]
+    if (!chainConfig) {
+      console.error('No config found for chainId:', chainId)
+      return null
     }
 
-    console.log('AMM Contracts Loaded:', { 
-      amm1: { address: amm1Address, contract: !!amm1 },
-      amm2: { address: amm2Address, contract: !!amm2 },
-      aggregator: { address: aggregator?.address, contract: !!aggregator }
+    const { amms, aggregator: aggregatorConfig } = chainConfig
+    
+    if (!amms?.amm1?.address) {
+      console.error('AMM1 address not found in config for chainId:', chainId)
+      return null
+    }
+
+    // Ensure addresses are checksummed
+    const amm1Address = getChecksumAddress(amms.amm1.address)
+    const amm2Address = amms.amm2?.address ? getChecksumAddress(amms.amm2.address) : null
+    const amm3Address = amms.amm3?.address ? getChecksumAddress(amms.amm3.address) : null
+    const aggregatorAddress = aggregatorConfig?.address ? getChecksumAddress(aggregatorConfig.address) : null
+
+    console.log('Loading AMM contracts with addresses:', { 
+      amm1: amm1Address, 
+      amm2: amm2Address, 
+      amm3: amm3Address,
+      aggregator: aggregatorAddress
     })
 
-    // Create the contract objects with both address and contract instance
-    const amm1Obj = { address: amm1Address, contract: amm1 }
-    const amm2Obj = amm2Address ? { address: amm2Address, contract: amm2 } : null
-    const aggregatorObj = aggregator ? { address: aggregator.address, contract: aggregator } : null
+    // Debug ABI
+    console.log('AMM ABI functions:', 
+      AMM_ABI
+        .filter(item => item.type === 'function')
+        .map(fn => ({
+          name: fn.name,
+          inputs: fn.inputs?.map(i => i.type).join(','),
+          outputs: fn.outputs?.map(o => o.type).join(',')
+        }))
+    )
+    
+    // Create contract instances with signer for write operations
+    const signer = provider.getSigner()
+    
+    // Create contract instances
+    const amm1Contract = new ethers.Contract(amm1Address, AMM_ABI, signer)
+    const amm2Contract = amm2Address ? new ethers.Contract(amm2Address, AMM_ABI, signer) : null
+    const amm3Contract = amm3Address ? new ethers.Contract(amm3Address, AMM_ABI, signer) : null
+    
+    // Log available methods
+    console.log('AMM1 methods:', Object.keys(amm1Contract.functions))
+    if (amm2Contract) console.log('AMM2 methods:', Object.keys(amm2Contract.functions))
+    if (amm3Contract) console.log('AMM3 methods:', Object.keys(amm3Contract.functions))
 
-    // Dispatch the contract instances
-    dispatch(setContract({ 
+    // Also load aggregator if exists
+    let aggregatorContract = null
+    if (aggregatorAddress) {
+      console.log('Loading aggregator contract...')
+      aggregatorContract = new ethers.Contract(aggregatorAddress, AGGREGATOR_ABI, signer)
+      console.log('Aggregator methods:', Object.keys(aggregatorContract.functions))
+    }
+
+    // Create contract objects with token info
+    const amm1Obj = { 
+      address: amm1Address, 
+      contract: amm1Contract,
+      token1: 'kelchain',
+      token2: 'usd',
+      name: amms.amm1.name || 'DEX 1'
+    }
+    
+    const amm2Obj = amm2Address ? { 
+      address: amm2Address, 
+      contract: amm2Contract,
+      token1: 'kelchain',
+      token2: 'usd',
+      name: amms.amm2?.name || 'DEX 2'
+    } : null
+    
+    const amm3Obj = amm3Address ? { 
+      address: amm3Address, 
+      contract: amm3Contract,
+      token1: amms.amm3?.token1 || 'kelchain3',
+      token2: amms.amm3?.token2 || 'usd3',
+      name: amms.amm3?.name || 'DEX 3'
+    } : null
+    
+    const aggregatorObj = aggregatorAddress ? { 
+      address: aggregatorAddress, 
+      contract: aggregatorContract 
+    } : null
+
+    // Dispatch to Redux store
+    const contracts = {
+      amm1: amm1Obj,
+      ...(amm2Obj && { amm2: amm2Obj }),
+      ...(amm3Obj && { amm3: amm3Obj }),
+      ...(aggregatorObj && { aggregator: aggregatorObj })
+    }
+    
+    console.log('Dispatching contracts:', Object.keys(contracts))
+    dispatch(setContract(contracts))
+    
+    console.log('AMM contracts loaded successfully')
+    return {
       amm1: amm1Obj,
       amm2: amm2Obj,
-      aggregator: aggregatorObj
-    }))
-
-    return { 
-      amm1: amm1Obj,
-      amm2: amm2Obj,
+      amm3: amm3Obj,
       aggregator: aggregatorObj
     }
   } catch (error) {
@@ -538,178 +650,407 @@ export const loadAllSwaps = async (provider, amm, dispatch) => {
   }
 }
 
-// ------------------------------------------------------------------------------
-// AGGREGATOR FUNCTIONS
-
-export const compareAMMRates = async (amm1, amm2, inputToken, amount) => {
+// Log detailed AMM state for debugging
+// eslint-disable-next-line no-unused-vars
+const logAMMState = async (amm, name = 'AMM') => {
   try {
-    let rate1, rate2
-    const parsedAmount = ethers.utils.parseUnits(amount.toString(), 'ether')
-    
-    if (inputToken === 'KelChain') {
-      rate1 = await amm1.calculateToken1Swap(parsedAmount)
-      rate2 = await amm2.calculateToken1Swap(parsedAmount)
-    } else {
-      rate1 = await amm1.calculateToken2Swap(parsedAmount)
-      rate2 = await amm2.calculateToken2Swap(parsedAmount)
+    if (!amm?.contract) {
+      console.log(`[logAMMState] ${name}: Contract not available`);
+      return;
     }
     
-    return {
-      amm1Rate: ethers.utils.formatUnits(rate1, 'ether'),
-      amm2Rate: ethers.utils.formatUnits(rate2, 'ether'),
-      bestAMM: rate1.gt(rate2) ? 'amm1' : 'amm2',
-      bestRate: ethers.utils.formatUnits(rate1.gt(rate2) ? rate1 : rate2, 'ether')
+    console.log(`[logAMMState] Checking ${name} contract at ${amm.address}`);
+    
+    // Get contract state using view functions
+    const [
+      token1Addr,
+      token2Addr,
+      token1Balance,
+      token2Balance,
+      k,
+      totalShares,
+      // hasToken1BalanceFn,
+      // hasToken2BalanceFn,
+      // hasKFn,
+      // hasTotalSharesFn,
+      hasGetToken1EstimatedReturnFn,
+      hasGetToken2EstimatedReturnFn,
+      hasSwapToken1Fn,
+      hasSwapToken2Fn
+    ] = await Promise.all([
+      amm.contract.token1().catch(() => 'error'),
+      amm.contract.token2().catch(() => 'error'),
+      amm.contract.token1Balance ? amm.contract.token1Balance().catch(() => 'error') : Promise.resolve('function not available'),
+      amm.contract.token2Balance ? amm.contract.token2Balance().catch(() => 'error') : Promise.resolve('function not available'),
+      amm.contract.K ? amm.contract.K().catch(() => 'error') : Promise.resolve('function not available'),
+      amm.contract.totalShares ? amm.contract.totalShares().catch(() => 'error') : Promise.resolve('function not available'),
+      Promise.resolve(!!amm.contract.token1Balance),
+      Promise.resolve(!!amm.contract.token2Balance),
+      Promise.resolve(!!amm.contract.K),
+      Promise.resolve(!!amm.contract.totalShares),
+      Promise.resolve(!!amm.contract.getToken1EstimatedReturn),
+      Promise.resolve(!!amm.contract.getToken2EstimatedReturn),
+      Promise.resolve(!!amm.contract.swapToken1),
+      Promise.resolve(!!amm.contract.swapToken2)
+    ]);
+    
+    // Log basic contract info
+    console.log(`[logAMMState] ${name} State:`, {
+      address: amm.address,
+      token1: token1Addr,
+      token2: token2Addr,
+      token1Balance: token1Balance?.toString() || 'error',
+      token2Balance: token2Balance?.toString() || 'error',
+      k: k?.toString() || 'error',
+      totalShares: totalShares?.toString() || 'error',
+      hasRequiredFunctions: {
+        getToken1EstimatedReturn: hasGetToken1EstimatedReturnFn,
+        getToken2EstimatedReturn: hasGetToken2EstimatedReturnFn,
+        swapToken1: hasSwapToken1Fn,
+        swapToken2: hasSwapToken2Fn
+      }
+    });
+    
+    // Log available methods for debugging
+    const availableMethods = Object.entries(amm.contract)
+      .filter(([_, value]) => typeof value === 'function')
+      .map(([key]) => key);
+    console.log(`[logAMMState] ${name} Available Methods:`, availableMethods);
+    
+    // Log ABI function signatures
+    if (AMM_ABI) {
+      const functionSignatures = AMM_ABI
+        .filter(item => item.type === 'function')
+        .map(fn => ({
+          name: fn.name,
+          inputs: fn.inputs?.map(i => i.type).join(',') || 'none',
+          outputs: fn.outputs?.map(o => o.type).join(',') || 'none'
+        }));
+      console.log(`[logAMMState] ${name} ABI Functions:`, functionSignatures);
+    } else {
+      console.warn('[logAMMState] AMM_ABI not available');
     }
   } catch (error) {
-    console.error('Error comparing AMM rates:', error)
-    return null
+    console.error(`Error getting ${name} state:`, error)
   }
 }
 
-export const swapViaAggregator = async (provider, aggregator, inputToken, amount, dispatch) => {
+// AGGREGATOR FUNCTIONS
+
+export const compareAMMRates = async (amm1, amm2, amm3, inputToken, amount) => {
   try {
-    if (!provider || !aggregator || !inputToken || !amount) {
-      throw new Error('Missing required parameters for swap')
+    console.log('Comparing AMM rates for', amount, inputToken);
+    
+    // Log AMM contract addresses for debugging
+    console.log('AMM1:', amm1?.address);
+    console.log('AMM2:', amm2?.address);
+    console.log('AMM3:', amm3?.address);
+
+    // Log contract methods for debugging
+    if (amm1) {
+      console.log('AMM1 methods:', Object.keys(amm1));
+    } else {
+      console.log('AMM1: Contract not available');
     }
+
+    if (amm2) {
+      console.log('AMM2 methods:', Object.keys(amm2));
+    } else {
+      console.log('AMM2: Contract not available');
+    }
+
+    if (amm3) {
+      console.log('AMM3 methods:', Object.keys(amm3));
+    } else {
+      console.log('AMM3: Contract not available');
+    }
+
+    console.log('compareAMMRates - Input:', { inputToken, amount });
+
+    // Get rates from all AMMs using the correct function names
+    const rates = await Promise.all([
+      // AMM1
+      (async () => {
+        try {
+          if (!amm1) return ethers.BigNumber.from(0);
+          
+          let result;
+          if (inputToken === 'KEL') {
+            // Swap KEL (token1) to USD (token2)
+            result = await amm1.calculateToken1Swap(amount);
+            console.log('AMM1 rate (KEL->USD):', ethers.utils.formatEther(result), 'USD per KEL');
+          } else {
+            // Swap USD (token2) to KEL (token1)
+            result = await amm1.calculateToken2Swap(amount);
+            console.log('AMM1 rate (USD->KEL):', ethers.utils.formatEther(result), 'KEL per USD');
+          }
+          return result;
+        } catch (e) {
+          console.error('Error in AMM1 calculation:', e);
+          return ethers.BigNumber.from(0);
+        }
+      })(),
+      // AMM2
+      (async () => {
+        try {
+          if (!amm2) return ethers.BigNumber.from(0);
+          
+          let result;
+          if (inputToken === 'KEL') {
+            result = await amm2.calculateToken1Swap(amount);
+            console.log('AMM2 rate (KEL->USD):', ethers.utils.formatEther(result), 'USD per KEL');
+          } else {
+            result = await amm2.calculateToken2Swap(amount);
+            console.log('AMM2 rate (USD->KEL):', ethers.utils.formatEther(result), 'KEL per USD');
+          }
+          return result;
+        } catch (e) {
+          console.error('Error in AMM2 calculation:', e);
+          return ethers.BigNumber.from(0);
+        }
+      })(),
+      // AMM3 (if available)
+      (async () => {
+        if (!amm3) return ethers.BigNumber.from(0);
+        
+        try {
+          let result;
+          if (inputToken === 'KEL') {
+            result = await amm3.calculateToken1Swap(amount);
+            console.log('AMM3 rate (KEL->USD):', ethers.utils.formatEther(result), 'USD per KEL');
+          } else {
+            result = await amm3.calculateToken2Swap(amount);
+            console.log('AMM3 rate (USD->KEL):', ethers.utils.formatEther(result), 'KEL per USD');
+          }
+          return result;
+        } catch (e) {
+          console.error('Error in AMM3 calculation:', e);
+          return ethers.BigNumber.from(0);
+        }
+      })()
+    ])
+    
+    console.log('AMM Rates:', {
+      amm1: ethers.utils.formatEther(rates[0]),
+      amm2: ethers.utils.formatEther(rates[1]),
+      amm3: amm3 ? ethers.utils.formatEther(rates[2]) : 'N/A'
+    })
+    
+    console.log('All AMM rates:', {
+      amm1: ethers.utils.formatEther(rates[0].toString()),
+      amm2: ethers.utils.formatEther(rates[1].toString()),
+      amm3: amm3 ? ethers.utils.formatEther(rates[2].toString()) : 'N/A'
+    });
+
+    // Find the AMM with the best rate (non-zero)
+    let bestAmm = null;
+    let bestRate = ethers.BigNumber.from(0);
+    
+    if (rates[0].gt(0)) {
+      bestAmm = 'amm1';
+      bestRate = rates[0];
+    }
+    
+    if (rates[1].gt(bestRate)) {
+      bestAmm = 'amm2';
+      bestRate = rates[1];
+    }
+    
+    if (amm3 && rates[2].gt(bestRate)) {
+      bestAmm = 'amm3';
+      bestRate = rates[2];
+    }
+    
+    if (!bestAmm) {
+      console.warn('No valid rates found from any AMM');
+      bestAmm = 'amm1'; // Default to amm1 if no valid rates found
+      bestRate = rates[0];
+    }
+    
+    return {
+      betterAMM: bestAmm,
+      betterRate: bestRate,
+      rates: {
+        amm1: rates[0],
+        amm2: rates[1],
+        amm3: rates[2]
+      }
+    }
+  } catch (error) {
+    console.error('Error comparing AMM rates:', error)
+    throw error
+  }
+}
+
+export const swapViaAggregator = async (provider, aggregator, inputToken, amount, dispatch, amm3 = null) => {
+  // Input validation
+  if (!provider) throw new Error('Provider is required')
+  if (!aggregator) throw new Error('Aggregator contract is required')
+  if (!inputToken) throw new Error('Input token is required')
+  if (!amount) throw new Error('Amount is required')
+  if (!dispatch) throw new Error('Dispatch function is required')
+  
+  try {
+    console.group('[swapViaAggregator] Starting swap process')
     
     dispatch(swapRequest())
     
     const signer = await provider.getSigner()
     const signerAddress = await signer.getAddress()
     
-    console.log(`[swapViaAggregator] Initiating swap for ${signerAddress}`)
-    console.log(`[swapViaAggregator] Token: ${inputToken}, Amount: ${amount.toString()}`)
+    console.log('Account:', signerAddress)
+    console.log('Token:', inputToken)
+    console.log('Amount:', ethers.utils.formatEther(amount), 'wei')
     
-    // Check token approval first
-    const tokenContract = inputToken === 'KelChain' 
-      ? new ethers.Contract(config[31337].tokens.kelchain.address, TOKEN_ABI, signer)
-      : new ethers.Contract(config[31337].tokens.usd.address, TOKEN_ABI, signer)
-    
-    console.log('[swapViaAggregator] Checking token approval...')
-    let allowance = await tokenContract.allowance(signerAddress, aggregator.address)
-    console.log(`[swapViaAggregator] Current allowance: ${ethers.utils.formatEther(allowance)}`)
-    
-    // Convert amount to BigNumber to ensure proper comparison
-    const amountBN = ethers.BigNumber.from(amount)
-    
-    // Check if we need to increase allowance
-    if (allowance.lt(amountBN)) {
-      console.log('[swapViaAggregator] Current allowance insufficient, approving tokens...')
+    // Get token contract with proper error handling
+    let tokenAddress
+    try {
+      tokenAddress = inputToken === 'KEL' 
+        ? config[31337].tokens.kelchain.address
+        : config[31337].tokens.usd.address
       
-      // First, try to reset approval to 0 (some tokens require this)
+      if (!tokenAddress) {
+        throw new Error(`Token address not found for ${inputToken}`)
+      }
+    } catch (tokenError) {
+      console.error('Error getting token address:', tokenError)
+      throw new Error(`Invalid token: ${inputToken}`)
+    }
+    
+    const tokenContract = new ethers.Contract(tokenAddress, TOKEN_ABI, signer)
+    console.log('Token contract:', tokenContract.address)
+    
+    // Check token balance first
+    const balance = await tokenContract.balanceOf(signerAddress)
+    console.log('Current token balance:', ethers.utils.formatEther(balance), inputToken)
+    
+    if (balance.lt(amount)) {
+      throw new Error(`Insufficient ${inputToken} balance. Required: ${ethers.utils.formatEther(amount)}, Available: ${ethers.utils.formatEther(balance)}`)
+    }
+    
+    // Check and handle token approval
+    console.log('Checking token approval...')
+    const amountBN = ethers.BigNumber.from(amount)
+    let allowance = await tokenContract.allowance(signerAddress, aggregator.address)
+    console.log('Current allowance:', ethers.utils.formatEther(allowance), inputToken)
+    
+    if (allowance.lt(amountBN)) {
+      console.log('Insufficient allowance, requesting approval...')
+      
       try {
+        // First try to reset approval to 0 if needed
         const resetTx = await tokenContract.approve(aggregator.address, 0)
-        console.log('[swapViaAggregator] Reset approval tx:', resetTx.hash)
-        await resetTx.wait(1) // Wait for 1 confirmation
+        console.log('Reset approval tx sent:', resetTx.hash)
+        await resetTx.wait(1)
       } catch (resetError) {
-        console.warn('[swapViaAggregator] Could not reset approval to 0:', resetError)
+        console.warn('Could not reset approval to 0:', resetError.message)
       }
       
-      // Then set the new allowance to the maximum possible value
+      // Set maximum approval
       const maxUint256 = ethers.constants.MaxUint256
       const approveTx = await tokenContract.approve(aggregator.address, maxUint256, {
-        gasLimit: 200000 // Increased gas limit for approval
+        gasLimit: 200000
       })
-      console.log(`[swapViaAggregator] New approval tx hash: ${approveTx.hash}`)
+      console.log('Approval tx sent:', approveTx.hash)
       
-      // Wait for the approval transaction to be mined
-      const receipt = await approveTx.wait(1) // Wait for 1 confirmation
-      console.log('[swapViaAggregator] Approval confirmed in block:', receipt.blockNumber)
+      const receipt = await approveTx.wait(1)
+      console.log('Approval confirmed in block:', receipt.blockNumber)
       
-      // Double check the new allowance
       allowance = await tokenContract.allowance(signerAddress, aggregator.address)
-      console.log(`[swapViaAggregator] New allowance: ${ethers.utils.formatEther(allowance)}`)
+      console.log('New allowance:', ethers.utils.formatEther(allowance), inputToken)
       
       if (allowance.lt(amountBN)) {
         throw new Error(`Failed to set sufficient allowance. Current: ${ethers.utils.formatEther(allowance)}, Required: ${ethers.utils.formatEther(amountBN)}`)
       }
     }
     
-    console.log('[swapViaAggregator] Sending swap transaction...')
+    // Find the best AMM rate
+    console.log('Finding best AMM rate...')
+    let betterAMM, bestRate, ammName
     
     try {
-      // Get the function signature based on token
-      const functionName = inputToken === 'KelChain' ? 'swapToken1ForToken2' : 'swapToken2ForToken1'
-      console.log(`[swapViaAggregator] Calling ${functionName} with amount:`, amount.toString())
+      const rates = await compareAMMRates(
+        aggregator.amm1,
+        aggregator.amm2,
+        amm3?.contract || null,
+        inputToken,
+        amount
+      )
       
-      // Estimate gas with a buffer
+      betterAMM = rates.betterAMM
+      bestRate = rates.bestRate
+      ammName = rates.ammName
+      
+      if (!betterAMM) {
+        throw new Error('No suitable AMM found for the swap')
+      }
+      
+      console.log(`Best rate found on ${ammName}:`, bestRate.toString())
+    
+      // Prepare the swap transaction
+      console.log('Preparing swap transaction...')
+      const ammContract = new ethers.Contract(betterAMM, AMM_ABI, signer)
+      
+      // Determine which swap function to use based on input token
+      const isToken1 = inputToken === 'KEL'
+      const swapFunction = isToken1 ? 'swapToken1' : 'swapToken2'
+      
+      console.log(`Executing ${swapFunction} on ${ammName}...`)
+      
+      // Estimate gas first
       let gasEstimate
       try {
-        // Try with a buffer to avoid out of gas errors
-        gasEstimate = await aggregator.estimateGas[functionName](amount, {
-          gasLimit: 300000 // Initial gas limit for estimation
+        gasEstimate = await ammContract.estimateGas[swapFunction](amount, {
+          from: signerAddress
         })
-        console.log('[swapViaAggregator] Gas estimate:', gasEstimate.toString())
-        // Add 20% buffer to the gas estimate
+        // Add 20% buffer
         gasEstimate = gasEstimate.mul(120).div(100)
+        console.log('Estimated gas:', gasEstimate.toString())
       } catch (estimationError) {
-        console.error('[swapViaAggregator] Gas estimation failed:', estimationError)
-        // If estimation fails, use a high gas limit
-        gasEstimate = ethers.BigNumber.from('500000')
-        console.log(`[swapViaAggregator] Using fallback gas limit: ${gasEstimate.toString()}`)
+        console.warn('Gas estimation failed, using fallback:', estimationError.message)
+        gasEstimate = 500000 // Fallback gas limit
       }
       
-      // Send the transaction with proper gas parameters
-      const txOptions = {
+      // Execute the swap
+      const tx = await ammContract[swapFunction](amount, {
         gasLimit: gasEstimate,
         gasPrice: await provider.getGasPrice()
-      }
-      
-      console.log('[swapViaAggregator] Sending transaction with options:', {
-        gasLimit: txOptions.gasLimit.toString(),
-        gasPrice: txOptions.gasPrice?.toString()
       })
       
-      const transaction = await aggregator.connect(signer)[functionName](amount, txOptions)
-      console.log('[swapViaAggregator] Transaction hash:', transaction.hash)
+      console.log('Swap transaction sent:', tx.hash)
       
       // Wait for the transaction to be mined
-      const receipt = await transaction.wait(1) // Wait for 1 confirmation
-      console.log('[swapViaAggregator] Transaction confirmed in block:', receipt.blockNumber)
+      const receipt = await tx.wait(1)
+      console.log('Transaction confirmed in block:', receipt.blockNumber)
       
-      // Check if the transaction was successful
       if (receipt.status === 0) {
         throw new Error('Transaction reverted')
       }
       
-      dispatch(swapSuccess(transaction.hash))
-      return transaction
-      
-    } catch (txError) {
-      console.error('[swapViaAggregator] Transaction error:', {
-        message: txError.message,
-        code: txError.code,
-        data: txError.data,
-        reason: txError.reason,
-        stack: txError.stack
-      })
-      
-      // Try to extract revert reason if available
-      if (txError.reason || txError.data?.message) {
-        throw new Error(txError.reason || txError.data.message)
+      // Get the actual amount received
+      const swapEvents = receipt.events?.filter(x => x.event === 'Swap')
+      if (swapEvents && swapEvents.length > 0) {
+        const swapEvent = swapEvents[0]
+        const amountOut = isToken1 ? swapEvent.args.amount2 : swapEvent.args.amount1
+        console.log(`Received ${ethers.utils.formatEther(amountOut)} ${isToken1 ? 'USD' : 'KEL'}`)
       }
       
-      // Check for common errors
-      if (txError.message.includes('insufficient funds')) {
-        throw new Error('Insufficient funds for transaction')
-      }
-      
-      if (txError.message.includes('revert')) {
-        throw new Error('Transaction reverted. Check token balances and allowances.')
-      }
-      
-      throw new Error(txError.message || 'Transaction failed')
+      // Dispatch success
+      dispatch(swapSuccess(tx.hash))
+      return tx
+    } catch (error) {
+      console.error('Error during swap execution:', error)
+      throw error // This will be caught by the outer catch block
     }
     
   } catch (error) {
-    console.error('[swapViaAggregator] Swap failed with error:', {
-      name: error.name,
+    console.error('Swap failed:', {
       message: error.message,
       code: error.code,
       data: error.data,
       reason: error.reason,
       stack: error.stack
-    });
+    })
     
     // Format a user-friendly error message
     let errorMessage = 'Transaction failed';
@@ -723,5 +1064,7 @@ export const swapViaAggregator = async (provider, aggregator, inputToken, amount
     
     dispatch(swapFail(errorMessage));
     throw new Error(errorMessage);
+  } finally {
+    console.groupEnd()
   }
 }

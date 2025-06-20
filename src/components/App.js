@@ -70,7 +70,7 @@ function App() {
   return(
     <div className="app-wrapper" style={{ 
       minHeight: '100vh', 
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      background: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
       paddingTop: '20px',
       paddingBottom: '40px'
     }}>
@@ -92,7 +92,7 @@ function App() {
               }}>
                 <Card.Body className="text-center py-5">
                   <h1 className="display-4 fw-bold text-dark mb-3">
-                    🚀 AlgoGator
+                    🐊 CrocoDai-l
                   </h1>
                   <p className="lead text-muted mb-4">
                     Advanced DEX Aggregator - Find the best rates across multiple AMMs
