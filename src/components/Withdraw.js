@@ -330,7 +330,7 @@ const Withdraw = () => {
                   </div>
                   <div className="d-flex justify-content-between align-items-center mb-2">
                     <div className="d-flex align-items-center">
-                      <div className="me-2" style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#1b5e20' }}></div>
+                      <div className="me-2" style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#0d6efd' }}></div>
                       <span>KEL</span>
                     </div>
                     <span className="fw-bold">{parseFloat(estimatedAmounts.kel).toFixed(4)}</span>
@@ -374,7 +374,7 @@ const Withdraw = () => {
             <Row className="mb-3">
               <div className="d-flex justify-content-between align-items-center mb-2">
                 <div className="d-flex align-items-center">
-                  <div className="me-2" style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#1b5e20' }}></div>
+                  <div className="me-2" style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#0d6efd' }}></div>
                   <span>KEL Balance:</span>
                 </div>
                 <span className="fw-bold">
@@ -446,7 +446,7 @@ const Withdraw = () => {
             
             <div className="d-flex justify-content-between align-items-center mb-2">
               <div className="d-flex align-items-center">
-                <div className="me-2" style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#1b5e20' }}></div>
+                <div className="me-2" style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#0d6efd' }}></div>
                 <span>KEL</span>
               </div>
               <span className="fw-bold">{parseFloat(estimatedAmounts.kel).toFixed(4)}</span>

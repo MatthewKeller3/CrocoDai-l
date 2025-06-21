@@ -52,7 +52,7 @@ const Navigation = () => {
           style={{
             width: '50px',
             height: '50px',
-            background: 'linear-gradient(45deg, #1b5e20, #2e7d32)',
+            background: 'linear-gradient(45deg, #667eea, #764ba2)',
             borderRadius: '12px',
             color: 'white',
             fontSize: '24px',
@@ -67,13 +67,13 @@ const Navigation = () => {
             className="mb-0 fw-bold"
             style={{ 
               fontSize: '24px',
-              background: 'linear-gradient(45deg,rgb(232, 248, 8), #2e7d32)',
+              background: 'linear-gradient(45deg, #667eea, #764ba2)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text'
             }}
           >
-            CrocoDai-l
+            AlgoGator
           </Navbar.Brand>
           <div style={{ fontSize: '12px', color: '#6c757d', marginTop: '-5px' }}>
             DEX Aggregator Platform
@@ -129,7 +129,7 @@ const Navigation = () => {
               <Button 
                 onClick={connectHandler}
                 style={{
-                  background: 'linear-gradient(45deg,rgb(124, 234, 102),rgb(138, 206, 28))',
+                  background: 'linear-gradient(45deg, #667eea, #764ba2)',
                   border: 'none',
                   borderRadius: '10px',
                   padding: '10px 20px',

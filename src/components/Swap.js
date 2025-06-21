@@ -47,7 +47,7 @@ const Swap = () => {
   // Check if all required contracts are loaded
   const contractsLoaded = useMemo(() => {
     const tokensReady = tokens?.length === 2 && tokens[0]?.address && tokens[1]?.address;
-    const ammReady = ammState?.amm1?.contract; // We only need 1 AMM to be ready
+    const ammReady = ammState?.amm1?.contract && ammState?.amm2?.contract;
     
     console.log('Contract Status:', {
       tokensReady,
@@ -55,56 +55,50 @@ const Swap = () => {
       token2: tokens?.[1]?.address,
       amm1: ammState?.amm1?.address,
       amm2: ammState?.amm2?.address,
-      amm3: ammState?.amm3?.address,
       amm1Contract: !!ammState?.amm1?.contract,
-      amm2Contract: !!ammState?.amm2?.contract,
-      amm3Contract: !!ammState?.amm3?.contract
+      amm2Contract: !!ammState?.amm2?.contract
     });
     
     return tokensReady && ammReady;
   }, [tokens, ammState]);
 
-  // Load balances when component mounts and when account/tokens/contracts change
+  // Load balances when component mounts and when account/tokens change
   useEffect(() => {
     const loadData = async () => {
       if (!account) {
-        console.log('No account connected');
+        console.log('Account not connected');
         return;
       }
 
+      console.log('Loading balances with:', {
+        account,
+        tokens: tokens?.map(t => t?.address),
+        amm1: ammState?.amm1?.address,
+        amm2: ammState?.amm2?.address,
+        contractsLoaded
+      });
+
       try {
-        if (!contractsLoaded) {
-          console.log('Contracts not fully loaded yet');
+        // Verify contracts before loading balances
+        if (!tokens?.[0]?.address || !tokens?.[1]?.address) {
+          console.error('Token contracts not loaded');
           return;
         }
 
-        console.log('Loading balances with:', {
-          account,
-          tokens: tokens?.map(t => ({
-            address: t?.address,
-            symbol: t?.symbol
-          })),
-          amm1: ammState?.amm1?.address,
-          amm2: ammState?.amm2?.address,
-          amm3: ammState?.amm3?.address,
-          contractsLoaded
-        });
-
-        // Load token balances directly
-        const [balance1, balance2] = await Promise.all([
-          tokens[0].balanceOf(account),
-          tokens[1].balanceOf(account)
-        ]);
+        // Import loadBalances here to avoid dependency warning
+        const { loadBalances } = await import('../store/interactions');
+        
+        // Load token balances first
+        const token1Balance = await tokens[0].balanceOf(account);
+        const token2Balance = await tokens[1].balanceOf(account);
         
         console.log('Token Balances:', {
-          token1: balance1.toString(),
-          token2: balance2.toString()
+          token1: token1Balance.toString(),
+          token2: token2Balance.toString()
         });
         
-        // Load AMM balances - try all available AMMs
+        // Load AMM balances - try both AMMs if available
         const tryLoadBalances = async (amm) => {
-          if (!amm?.contract) return false;
-          
           try {
             console.log('Attempting to load balances with AMM:', amm.address);
             await loadBalances(amm, tokens, account, dispatch);
@@ -115,31 +109,23 @@ const Swap = () => {
           }
         };
 
-        // Try all available AMMs in order until one succeeds
-        const ammsToTry = [
-          ammState.amm1,
-          ammState.amm2,
-          ammState.amm3
-        ].filter(amm => amm?.contract);
-        
-        console.log(`Trying to load balances from ${ammsToTry.length} AMMs`);
-        
         let balanceLoadSuccess = false;
-        for (const amm of ammsToTry) {
-          balanceLoadSuccess = await tryLoadBalances(amm);
-          if (balanceLoadSuccess) {
-            console.log(`Successfully loaded balances from AMM at ${amm.address}`);
-            break;
-          }
+        
+        // Try AMM1 first
+        if (ammState.amm1?.contract) {
+          balanceLoadSuccess = await tryLoadBalances(ammState.amm1);
         }
         
+        // If AMM1 failed or not available, try AMM2
+        if (!balanceLoadSuccess && ammState.amm2?.contract) {
+          balanceLoadSuccess = await tryLoadBalances(ammState.amm2);
+        }
+        
+        // If both failed, set default values
         if (!balanceLoadSuccess) {
           console.warn('Could not load balances from any AMM');
-          // Only reset balances if we're sure we've tried all AMMs
-          if (ammsToTry.length > 0) {
-            dispatch(tokensActions.balancesLoaded(['0', '0']));
-            dispatch(ammActions.sharesLoaded('0'));
-          }
+          dispatch(tokensActions.balancesLoaded(['0', '0']));
+          dispatch(ammActions.sharesLoaded('0'));
         }
         
         // Set default tokens if not set
@@ -159,11 +145,8 @@ const Swap = () => {
 
     loadData();
     
-    // Set up polling with error handling
-    const balanceInterval = setInterval(() => {
-      loadData().catch(console.error);
-    }, 10000);
-    
+    // Set up polling
+    const balanceInterval = setInterval(loadData, 10000);
     return () => clearInterval(balanceInterval);
   }, [account, contractsLoaded, tokens, ammState, dispatch, inputToken, outputToken]);
 
@@ -192,25 +175,10 @@ const Swap = () => {
       const amount = ethers.utils.parseUnits(value, 'ether');
       
       let result;
-      try {
-        if (isToken1Input) {
-          console.log(`Calculating token1 -> token2 swap for amount: ${ethers.utils.formatEther(amount)}`);
-          result = await amm.calculateToken1Swap(amount);
-          console.log(`Estimated return: ${ethers.utils.formatEther(result)}`);
-        } else {
-          console.log(`Calculating token2 -> token1 swap for amount: ${ethers.utils.formatEther(amount)}`);
-          result = await amm.calculateToken2Swap(amount);
-          console.log(`Estimated return: ${ethers.utils.formatEther(result)}`);
-        }
-      } catch (error) {
-        console.error('Error in swap calculation:', {
-          error,
-          isToken1Input,
-          amount: amount.toString(),
-          ammAddress: amm?.address,
-          availableMethods: amm ? Object.keys(amm).filter(k => typeof amm[k] === 'function') : []
-        });
-        throw error;
+      if (isToken1Input) {
+        result = await amm.calculateToken1Swap(amount);
+      } else {
+        result = await amm.calculateToken2Swap(amount);
       }
       
       const outputAmount = ethers.utils.formatUnits(result.toString(), 'ether');

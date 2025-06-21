@@ -80,7 +80,7 @@ export const options = {
       show: true,
       position: 'back',
       stroke: {
-        color: '#2e7d32',
+        color: '#5e72e4',
         width: 1,
         dashArray: 0
       }
@@ -172,7 +172,7 @@ export const options = {
       left: 10
     }
   },
-  colors: ['#2e7d32', '#1b5e20', '#0d4b13', '#0a3a0f', '#06290a', '#031a05'],
+  colors: ['#5e72e4', '#2dce89', '#f5365c', '#fb6340', '#11cdef', '#2dcee6'],
   legend: {
     position: 'top',
     horizontalAlign: 'right',

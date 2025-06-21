@@ -5,7 +5,6 @@ export const amm = createSlice({
   initialState: {
     amm1: { contract: null },
     amm2: { contract: null },
-    amm3: { contract: null },
     aggregator: { contract: null },
     shares: 0,
     swaps: [],
@@ -46,17 +45,6 @@ export const amm = createSlice({
         }
       } else {
         state.amm2 = { contract: null, address: null }
-      }
-      
-      if (action.payload.amm3) {
-        state.amm3 = {
-          ...state.amm3,
-          ...action.payload.amm3,
-          address: action.payload.amm3.address || state.amm3?.address,
-          contract: action.payload.amm3.contract || action.payload.amm3.contract
-        }
-      } else {
-        state.amm3 = { contract: null, address: null }
       }
       
       if (action.payload.aggregator) {
